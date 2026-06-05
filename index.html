@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        /* This tells the computer to show the image nicely */
+        #yard-container {
+            position: relative;
+            width: 100%;
+        }
+
+        #yard-container img {
+            width: 100%;
+        }
+
+        /* This is our test box */
+        .test-zone {
+            position: absolute;
+            top: 20%;      /* How far from the top */
+            left: 20%;     /* How far from the left */
+            width: 10%;    /* How wide */
+            height: 10%;   /* How tall */
+            border: 3px solid red; /* This makes the visible red box */
+            background-color: rgba(255, 0, 0, 0.3); /* This makes it slightly see-through */
+        }
+    </style>
+</head>
+<body>
+
+    <div id="yard-container">
+        <img src="A to Z.png">
+        
+        <div class="test-zone"></div>
+    </div>
+
+</body>
+</html>
