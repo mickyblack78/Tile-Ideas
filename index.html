@@ -76,6 +76,8 @@
     document.getElementById('doc-title').innerText = file.name;
     rawBuffer = await file.arrayBuffer();
     currentPassword = null;
+    currentPassword = prompt('Enter PDF password (leave blank if none):');
+    
     await db.store.put({ id: 'active', name: file.name, data: rawBuffer });
     render(rawBuffer);
   }
@@ -84,8 +86,8 @@
     const container = document.getElementById('viewer');
     container.innerHTML = '';
     
-    const loadingTask = pdfjsLib.getDocument({ data: buffer });
-
+      const loadingTask = pdfjsLib.getDocument({ data: buffer, password: currentPassword || '' });
+    
     loadingTask.onPassword = (updatePassword, reason) => {
       if (reason === pdfjsLib.PasswordResponses.NEED_PASSWORD || reason === pdfjsLib.PasswordResponses.INCORRECT_PASSWORD) {
         const msg = reason === pdfjsLib.PasswordResponses.INCORRECT_PASSWORD ? 'Incorrect password. Try again:' : 'Password protected. Enter password:';
