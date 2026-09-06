@@ -115,6 +115,9 @@
         const canvas = document.createElement('canvas');
         canvas.width = vp.width;
         canvas.height = vp.height;
+        canvas.style.width = vp.width + 'px';
+        canvas.style.height = vp.height + 'px';
+        
         const ctx = canvas.getContext('2d');
 
         const drawCanvas = document.createElement('canvas');
