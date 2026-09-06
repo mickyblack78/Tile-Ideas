@@ -81,19 +81,61 @@
   }
 
   async function render(buffer) {
-    const container = document.getElementById('viewer');
-    const loadingTask = pdfjsLib.getDocument({ data: buffer });
+  const container = document.getElementById('viewer');
+  container.innerHTML = '';
+  
+  const loadingTask = pdfjsLib.getDocument({ data: buffer });
 
-    loadingTask.onPassword = (updatePassword, reason) => {
-      if (reason === pdfjsLib.PasswordResponses.NEED_PASSWORD || reason === pdfjsLib.PasswordResponses.INCORRECT_PASSWORD) {
-        const msg = reason === pdfjsLib.PasswordResponses.INCORRECT_PASSWORD ? 'Incorrect password. Try again:' : 'Password protected. Enter password:';
-        const pwd = prompt(msg);
-        if (pwd) {
-          currentPassword = pwd;
-          updatePassword(pwd);
-        }
+  loadingTask.onPassword = (updatePassword, reason) => {
+    if (reason === pdfjsLib.PasswordResponses.NEED_PASSWORD || reason === pdfjsLib.PasswordResponses.INCORRECT_PASSWORD) {
+      const msg = reason === pdfjsLib.PasswordResponses.INCORRECT_PASSWORD ? 'Incorrect password. Try again:' : 'Password protected. Enter password:';
+      const pwd = prompt(msg);
+      if (pwd) {
+        currentPassword = pwd;
+        updatePassword(pwd);
+      } else {
+        alert('Password required to view document.');
       }
-    };
+    }
+  };
+
+  try {
+    const pdf = await loadingTask.promise;
+    document.getElementById('page-count').innerText = `1 / ${pdf.numPages}`;
+
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const vp = page.getViewport({ scale: 1.2 });
+      
+      const wrap = document.createElement('div');
+      wrap.className = 'page-wrapper';
+      wrap.style.width = vp.width + 'px';
+      wrap.style.height = vp.height + 'px';
+
+      const canvas = document.createElement('canvas');
+      canvas.width = vp.width;
+      canvas.height = vp.height;
+      const ctx = canvas.getContext('2d');
+
+      const drawCanvas = document.createElement('canvas');
+      drawCanvas.className = 'annotation-layer';
+      drawCanvas.width = vp.width;
+      drawCanvas.height = vp.height;
+      attachDraw(drawCanvas);
+
+      wrap.appendChild(canvas);
+      wrap.appendChild(drawCanvas);
+      container.appendChild(wrap);
+
+      // Render page content to canvas
+      await page.render({ canvasContext: ctx, viewport: vp }).promise;
+    }
+  } catch (err) {
+    console.error('Error rendering PDF:', err);
+    alert('Failed to load PDF: ' + err.message);
+  }
+  }
+  
 
     try {
       const pdf = await loadingTask.promise;
