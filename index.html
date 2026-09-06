@@ -124,6 +124,9 @@
         drawCanvas.className = 'annotation-layer';
         drawCanvas.width = vp.width;
         drawCanvas.height = vp.height;
+        drawCanvas.style.width = vp.width + 'px';
+        drawCanvas.style.height = vp.height + 'px';
+        
         attachDraw(drawCanvas);
 
         wrap.appendChild(canvas);
