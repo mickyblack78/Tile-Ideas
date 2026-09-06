@@ -134,44 +134,8 @@
     console.error('Error rendering PDF:', err);
     alert('Failed to load PDF: ' + err.message);
   }
-  }
   
 
-    try {
-      const pdf = await loadingTask.promise;
-      container.innerHTML = '';
-      document.getElementById('page-count').innerText = `1 / ${pdf.numPages}`;
-
-      for (let i = 1; i <= pdf.numPages; i++) {
-        const page = await pdf.getPage(i);
-        const vp = page.getViewport({ scale: 1.2 });
-        
-        const wrap = document.createElement('div');
-        wrap.className = 'page-wrapper';
-        wrap.style.width = vp.width + 'px';
-        wrap.style.height = vp.height + 'px';
-
-        const canvas = document.createElement('canvas');
-        canvas.width = vp.width;
-        canvas.height = vp.height;
-        await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
-
-        const drawCanvas = document.createElement('canvas');
-        drawCanvas.className = 'annotation-layer';
-        drawCanvas.width = vp.width;
-        drawCanvas.height = vp.height;
-        attachDraw(drawCanvas);
-
-        wrap.appendChild(canvas);
-        wrap.appendChild(drawCanvas);
-        container.appendChild(wrap);
-      }
-    } catch (err) {
-      if (err.name !== 'PasswordException') {
-        console.error('Error loading PDF:', err);
-      }
-    }
-  }
 
   function toggleDraw() {
     isDrawing = !isDrawing;
