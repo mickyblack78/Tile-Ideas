@@ -13,17 +13,17 @@
   <script src="https://unpkg.com/dexie@3.2.4/dist/dexie.js"></script>
 
   <style>
-    :root { --bg: #121212; --card: #1e1e1e; --accent: #00e676; --text: #fff; --border: #333; }
+    :root { --bg: #121212; --card: #1e1e1e; --accent: #00e676; --text: #ffffff; --border: #333333; }
     * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
-    body, html { width: 100%; height: 100%; background: var(--bg); color: var(--text); font-family: sans-serif; overflow: hidden; }
+    body, html { width: 100%; height: 100%; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; overflow: hidden; }
     #app { display: flex; flex-direction: column; height: 100dvh; }
     header { height: 50px; background: var(--card); display: flex; align-items: center; justify-content: space-between; padding: 0 16px; border-bottom: 1px solid var(--border); }
     #viewer { flex: 1; overflow: auto; background: #2a2a2a; display: flex; flex-direction: column; align-items: center; padding: 10px 0; }
-    .page-wrapper { position: relative; margin-bottom: 12px; }
-    canvas { display: block; background: #fff; }
+    .page-wrapper { position: relative; margin-bottom: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); }
+    canvas { display: block; background: #ffffff; }
     .annotation-layer { position: absolute; top: 0; left: 0; touch-action: none; pointer-events: none; }
     footer { height: 60px; background: var(--card); display: flex; align-items: center; justify-content: space-around; border-top: 1px solid var(--border); }
-    .btn { background: transparent; border: none; color: var(--text); display: flex; flex-direction: column; align-items: center; font-size: 10px; gap: 4px; }
+    .btn { background: transparent; border: none; color: var(--text); display: flex; flex-direction: column; align-items: center; font-size: 10px; gap: 4px; cursor: pointer; }
     .btn.active { color: var(--accent); }
     #file-input { display: none; }
   </style>
@@ -32,7 +32,7 @@
 
 <div id="app">
   <header>
-    <h1 id="doc-title" style="font-size:14px;">No File Loaded</h1>
+    <h1 id="doc-title" style="font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:65%;">No File Loaded</h1>
     <span id="page-count" style="font-size:12px; color:#aaa;">0/0</span>
   </header>
 
@@ -57,18 +57,16 @@
   let rawBuffer = null;
   let isDrawing = false;
   let rotations = {};
+  let currentPassword = null;
 
-  // Auto-Update Service Worker Listener
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('sw.js').then((reg) => {
-      reg.addEventListener('updatefound', () => {
-        const newWorker = reg.installing;
-        newWorker.addEventListener('statechange', () => {
-          if (newWorker.state === 'activated') {
-            window.location.reload(); // Reloads app instantly when new SW activates
-          }
-        });
-      });
+    navigator.serviceWorker.register('sw.js');
+    let refreshing = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (!refreshing) {
+        refreshing = true;
+        window.location.reload();
+      }
     });
   }
 
@@ -77,39 +75,59 @@
     if (!file) return;
     document.getElementById('doc-title').innerText = file.name;
     rawBuffer = await file.arrayBuffer();
+    currentPassword = null;
     await db.store.put({ id: 'active', name: file.name, data: rawBuffer });
     render(rawBuffer);
   }
 
   async function render(buffer) {
     const container = document.getElementById('viewer');
-    container.innerHTML = '';
-    const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
-    document.getElementById('page-count').innerText = `1 / ${pdf.numPages}`;
+    const loadingTask = pdfjsLib.getDocument({ data: buffer });
 
-    for (let i = 1; i <= pdf.numPages; i++) {
-      const page = await pdf.getPage(i);
-      const vp = page.getViewport({ scale: 1.2 });
-      
-      const wrap = document.createElement('div');
-      wrap.className = 'page-wrapper';
-      wrap.style.width = vp.width + 'px';
-      wrap.style.height = vp.height + 'px';
+    loadingTask.onPassword = (updatePassword, reason) => {
+      if (reason === pdfjsLib.PasswordResponses.NEED_PASSWORD || reason === pdfjsLib.PasswordResponses.INCORRECT_PASSWORD) {
+        const msg = reason === pdfjsLib.PasswordResponses.INCORRECT_PASSWORD ? 'Incorrect password. Try again:' : 'Password protected. Enter password:';
+        const pwd = prompt(msg);
+        if (pwd) {
+          currentPassword = pwd;
+          updatePassword(pwd);
+        }
+      }
+    };
 
-      const canvas = document.createElement('canvas');
-      canvas.width = vp.width;
-      canvas.height = vp.height;
-      await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+    try {
+      const pdf = await loadingTask.promise;
+      container.innerHTML = '';
+      document.getElementById('page-count').innerText = `1 / ${pdf.numPages}`;
 
-      const drawCanvas = document.createElement('canvas');
-      drawCanvas.className = 'annotation-layer';
-      drawCanvas.width = vp.width;
-      drawCanvas.height = vp.height;
-      attachDraw(drawCanvas);
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const vp = page.getViewport({ scale: 1.2 });
+        
+        const wrap = document.createElement('div');
+        wrap.className = 'page-wrapper';
+        wrap.style.width = vp.width + 'px';
+        wrap.style.height = vp.height + 'px';
 
-      wrap.appendChild(canvas);
-      wrap.appendChild(drawCanvas);
-      container.appendChild(wrap);
+        const canvas = document.createElement('canvas');
+        canvas.width = vp.width;
+        canvas.height = vp.height;
+        await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+
+        const drawCanvas = document.createElement('canvas');
+        drawCanvas.className = 'annotation-layer';
+        drawCanvas.width = vp.width;
+        drawCanvas.height = vp.height;
+        attachDraw(drawCanvas);
+
+        wrap.appendChild(canvas);
+        wrap.appendChild(drawCanvas);
+        container.appendChild(wrap);
+      }
+    } catch (err) {
+      if (err.name !== 'PasswordException') {
+        console.error('Error loading PDF:', err);
+      }
     }
   }
 
@@ -128,9 +146,36 @@
       const clientY = e.touches ? e.touches[0].clientY : e.clientY;
       return { x: clientX - r.left, y: clientY - r.top };
     };
-    c.addEventListener('touchstart', (e) => { if (!isDrawing) return; active = true; ctx.beginPath(); const p = pos(e); ctx.moveTo(p.x, p.y); ctx.strokeStyle = '#00e676'; ctx.lineWidth = 3; });
-    c.addEventListener('touchmove', (e) => { if (active && isDrawing) { const p = pos(e); ctx.lineTo(p.x, p.y); ctx.stroke(); } });
-    c.addEventListener('touchend', () => active = false);
+
+    const start = (e) => {
+      if (!isDrawing) return;
+      if (e.touches) e.preventDefault();
+      active = true;
+      ctx.beginPath();
+      const p = pos(e);
+      ctx.moveTo(p.x, p.y);
+      ctx.strokeStyle = '#00e676';
+      ctx.lineWidth = 3;
+      ctx.lineCap = 'round';
+    };
+
+    const move = (e) => {
+      if (active && isDrawing) {
+        if (e.touches) e.preventDefault();
+        const p = pos(e);
+        ctx.lineTo(p.x, p.y);
+        ctx.stroke();
+      }
+    };
+
+    const stop = () => active = false;
+
+    c.addEventListener('touchstart', start, { passive: false });
+    c.addEventListener('touchmove', move, { passive: false });
+    c.addEventListener('touchend', stop);
+    c.addEventListener('mousedown', start);
+    c.addEventListener('mousemove', move);
+    c.addEventListener('mouseup', stop);
   }
 
   function rotatePages() {
@@ -141,20 +186,34 @@
   }
 
   async function exportPDF() {
-    if (!rawBuffer) return;
-    const doc = await PDFLib.PDFDocument.load(rawBuffer);
+    if (!rawBuffer) return alert('No PDF loaded to export.');
+    let doc;
+    try {
+      const loadOptions = currentPassword ? { password: currentPassword } : { ignoreEncryption: true };
+      doc = await PDFLib.PDFDocument.load(rawBuffer, loadOptions);
+    } catch (err) {
+      const pwd = prompt('Enter password to unlock and export PDF:');
+      if (!pwd) return;
+      try {
+        doc = await PDFLib.PDFDocument.load(rawBuffer, { password: pwd });
+      } catch (e) {
+        return alert('Failed to unlock PDF with provided password.');
+      }
+    }
+
     doc.getPages().forEach((p, i) => {
       if (rotations[i + 1]) p.setRotation(PDFLib.degrees(p.getRotation().angle + rotations[i + 1]));
     });
+    
     const bytes = await doc.save();
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
-    a.download = 'edited.pdf';
+    a.download = 'exported_document.pdf';
     a.click();
   }
 
   function printPDF() {
-    if (!rawBuffer) return;
+    if (!rawBuffer) return alert('No PDF loaded to print.');
     const iframe = document.createElement('iframe');
     iframe.style.display = 'none';
     iframe.src = URL.createObjectURL(new Blob([rawBuffer], { type: 'application/pdf' }));
