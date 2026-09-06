@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Mobile PDF PWA</title>
+  
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#121212">
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+  <script src="https://unpkg.com/dexie@3.2.4/dist/dexie.js"></script>
+
+  <style>
+    :root { --bg: #121212; --card: #1e1e1e; --accent: #00e676; --text: #fff; --border: #333; }
+    * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+    body, html { width: 100%; height: 100%; background: var(--bg); color: var(--text); font-family: sans-serif; overflow: hidden; }
+    #app { display: flex; flex-direction: column; height: 100dvh; }
+    header { height: 50px; background: var(--card); display: flex; align-items: center; justify-content: space-between; padding: 0 16px; border-bottom: 1px solid var(--border); }
+    #viewer { flex: 1; overflow: auto; background: #2a2a2a; display: flex; flex-direction: column; align-items: center; padding: 10px 0; }
+    .page-wrapper { position: relative; margin-bottom: 12px; }
+    canvas { display: block; background: #fff; }
+    .annotation-layer { position: absolute; top: 0; left: 0; touch-action: none; pointer-events: none; }
+    footer { height: 60px; background: var(--card); display: flex; align-items: center; justify-content: space-around; border-top: 1px solid var(--border); }
+    .btn { background: transparent; border: none; color: var(--text); display: flex; flex-direction: column; align-items: center; font-size: 10px; gap: 4px; }
+    .btn.active { color: var(--accent); }
+    #file-input { display: none; }
+  </style>
+</head>
+<body>
+
+<div id="app">
+  <header>
+    <h1 id="doc-title" style="font-size:14px;">No File Loaded</h1>
+    <span id="page-count" style="font-size:12px; color:#aaa;">0/0</span>
+  </header>
+
+  <main id="viewer"></main>
+
+  <footer>
+    <button class="btn" onclick="document.getElementById('file-input').click()">Import</button>
+    <button class="btn" id="draw-btn" onclick="toggleDraw()">Draw</button>
+    <button class="btn" onclick="rotatePages()">Rotate</button>
+    <button class="btn" onclick="exportPDF()">Export</button>
+    <button class="btn" onclick="printPDF()">Print</button>
+  </footer>
+</div>
+
+<input type="file" id="file-input" accept="application/pdf" onchange="loadFile(event)">
+
+<script>
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  const db = new Dexie('PDFApp');
+  db.version(1).stores({ store: 'id, data, name' });
+
+  let rawBuffer = null;
+  let isDrawing = false;
+  let rotations = {};
+
+  // Auto-Update Service Worker Listener
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js').then((reg) => {
+      reg.addEventListener('updatefound', () => {
+        const newWorker = reg.installing;
+        newWorker.addEventListener('statechange', () => {
+          if (newWorker.state === 'activated') {
+            window.location.reload(); // Reloads app instantly when new SW activates
+          }
+        });
+      });
+    });
+  }
+
+  async function loadFile(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    document.getElementById('doc-title').innerText = file.name;
+    rawBuffer = await file.arrayBuffer();
+    await db.store.put({ id: 'active', name: file.name, data: rawBuffer });
+    render(rawBuffer);
+  }
+
+  async function render(buffer) {
+    const container = document.getElementById('viewer');
+    container.innerHTML = '';
+    const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+    document.getElementById('page-count').innerText = `1 / ${pdf.numPages}`;
+
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const vp = page.getViewport({ scale: 1.2 });
+      
+      const wrap = document.createElement('div');
+      wrap.className = 'page-wrapper';
+      wrap.style.width = vp.width + 'px';
+      wrap.style.height = vp.height + 'px';
+
+      const canvas = document.createElement('canvas');
+      canvas.width = vp.width;
+      canvas.height = vp.height;
+      await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+
+      const drawCanvas = document.createElement('canvas');
+      drawCanvas.className = 'annotation-layer';
+      drawCanvas.width = vp.width;
+      drawCanvas.height = vp.height;
+      attachDraw(drawCanvas);
+
+      wrap.appendChild(canvas);
+      wrap.appendChild(drawCanvas);
+      container.appendChild(wrap);
+    }
+  }
+
+  function toggleDraw() {
+    isDrawing = !isDrawing;
+    document.getElementById('draw-btn').classList.toggle('active', isDrawing);
+    document.querySelectorAll('.annotation-layer').forEach(c => c.style.pointerEvents = isDrawing ? 'auto' : 'none');
+  }
+
+  function attachDraw(c) {
+    const ctx = c.getContext('2d');
+    let active = false;
+    const pos = (e) => {
+      const r = c.getBoundingClientRect();
+      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+      const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+      return { x: clientX - r.left, y: clientY - r.top };
+    };
+    c.addEventListener('touchstart', (e) => { if (!isDrawing) return; active = true; ctx.beginPath(); const p = pos(e); ctx.moveTo(p.x, p.y); ctx.strokeStyle = '#00e676'; ctx.lineWidth = 3; });
+    c.addEventListener('touchmove', (e) => { if (active && isDrawing) { const p = pos(e); ctx.lineTo(p.x, p.y); ctx.stroke(); } });
+    c.addEventListener('touchend', () => active = false);
+  }
+
+  function rotatePages() {
+    document.querySelectorAll('.page-wrapper').forEach((w, i) => {
+      rotations[i + 1] = ((rotations[i + 1] || 0) + 90) % 360;
+      w.style.transform = `rotate(${rotations[i + 1]}deg)`;
+    });
+  }
+
+  async function exportPDF() {
+    if (!rawBuffer) return;
+    const doc = await PDFLib.PDFDocument.load(rawBuffer);
+    doc.getPages().forEach((p, i) => {
+      if (rotations[i + 1]) p.setRotation(PDFLib.degrees(p.getRotation().angle + rotations[i + 1]));
+    });
+    const bytes = await doc.save();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+    a.download = 'edited.pdf';
+    a.click();
+  }
+
+  function printPDF() {
+    if (!rawBuffer) return;
+    const iframe = document.createElement('iframe');
+    iframe.style.display = 'none';
+    iframe.src = URL.createObjectURL(new Blob([rawBuffer], { type: 'application/pdf' }));
+    document.body.appendChild(iframe);
+    iframe.onload = () => iframe.contentWindow.print();
+  }
+
+  window.addEventListener('DOMContentLoaded', async () => {
+    const saved = await db.store.get('active');
+    if (saved) {
+      document.getElementById('doc-title').innerText = saved.name;
+      rawBuffer = saved.data;
+      render(saved.data);
+    }
+  });
+</script>
+</body>
+</html>
