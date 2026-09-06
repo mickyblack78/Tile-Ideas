@@ -228,32 +228,32 @@
   }
 
   async function exportPDF() {
-    if (!rawBuffer) return alert('No PDF loaded to export.');
-    let doc;
-    try {
-      const loadOptions = currentPassword ? { password: currentPassword } : { ignoreEncryption: true };
-      doc = await PDFLib.PDFDocument.load(rawBuffer, loadOptions);
-    } catch (err) {
-      const pwd = prompt('Enter password to unlock and export PDF:');
-      if (!pwd) return;
-      try {
-        doc = await PDFLib.PDFDocument.load(rawBuffer, { password: pwd });
-      } catch (e) {
-        return alert('Failed to unlock PDF with provided password.');
-      }
-    }
-
-    doc.getPages().forEach((p, i) => {
-      if (rotations[i + 1]) p.setRotation(PDFLib.degrees(p.getRotation().angle + rotations[i + 1]));
-    });
+  if (!rawBuffer) return alert('No PDF loaded to export.');
+  let doc;
+  try {
+    const pwd = currentPassword || prompt('Enter password to unlock PDF:');
+    if (!pwd) return;
     
-    const bytes = await doc.save();
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
-    a.download = 'exported_document.pdf';
-    a.click();
+    doc = await PDFLib.PDFDocument.load(rawBuffer, { 
+      password: pwd,
+      ignoreEncryption: true 
+    });
+  } catch (err) {
+    console.error('Export error:', err);
+    return alert('Could not decrypt file for export. The PDF encryption method may be unsupported by client-side tools.');
   }
 
+  doc.getPages().forEach((p, i) => {
+    if (rotations[i + 1]) p.setRotation(PDFLib.degrees(p.getRotation().angle + rotations[i + 1]));
+  });
+  
+  const bytes = await doc.save();
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+  a.download = 'exported_document.pdf';
+  a.click();
+  }
+  
   function printPDF() {
     if (!rawBuffer) return alert('No PDF loaded to print.');
     const iframe = document.createElement('iframe');
